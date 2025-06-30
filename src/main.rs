@@ -1,5 +1,6 @@
 use actix_web::post;
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
+use base64;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use solana_sdk::instruction::{AccountMeta, Instruction};
@@ -24,14 +25,14 @@ struct KeypairResponse {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct SendSolData {
     program_id: String,
-    accounts: Vec<AccountMeta>,
-    instructions_data: Instruction,
+    accounts: Vec<String>,
+    instruction_data: Instruction,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct SendSolRequest {
-    from_address: String,
-    to_address: String,
+    from: String,
+    to: String,
     lamports: u64,
 }
 
@@ -73,8 +74,14 @@ struct SendTokenResponse {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct SendTokenData {
     program_id: String,
-    accounts: Vec<AccountMeta>,
-    instructions_data: Instruction,
+    accounts: Vec<AccountInfo>,
+    instruction_data: Instruction,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct AccountInfo {
+    pubkey: String,
+    is_signer: bool,
 }
 
 #[post("/keypair")]
@@ -100,19 +107,19 @@ async fn keypair() -> impl Responder {
 
 #[post("/send/sol")]
 async fn send_sol(body: web::Json<SendSolRequest>) -> impl Responder {
-    let from_pubkey = match body.from_address.parse::<Pubkey>() {
+    let from_pubkey = match body.from.parse::<Pubkey>() {
         Ok(pubkey) => pubkey,
         Err(e) => {
             return HttpResponse::BadRequest()
-                .json(ErrorResponse::new(format!("Invalid from_address: {}", e)));
+                .json(ErrorResponse::new(format!("Invalid from address: {}", e)));
         }
     };
 
-    let to_pubkey = match body.to_address.parse::<Pubkey>() {
+    let to_pubkey = match body.to.parse::<Pubkey>() {
         Ok(pubkey) => pubkey,
         Err(e) => {
             return HttpResponse::BadRequest()
-                .json(ErrorResponse::new(format!("Invalid to_address: {}", e)));
+                .json(ErrorResponse::new(format!("Invalid to address: {}", e)));
         }
     };
 
@@ -122,9 +129,9 @@ async fn send_sol(body: web::Json<SendSolRequest>) -> impl Responder {
     let response = SendSolResponse {
         success: true,
         data: SendSolData {
-            program_id: body.from_address.clone(),
-            accounts: transfer_instruction.accounts.clone(),
-            instructions_data: transfer_instruction.clone(),
+            program_id: body.from.clone(),
+            accounts: vec![from_pubkey.to_string(), to_pubkey.to_string()],
+            instruction_data: transfer_instruction.clone(),
         },
     };
     HttpResponse::Ok().json(response)
@@ -179,8 +186,15 @@ async fn send_token(body: web::Json<SendTokenRequest>) -> impl Responder {
         success: true,
         data: SendTokenData {
             program_id: spl_token::ID.to_string(),
-            accounts: transfer_instruction.accounts.clone(),
-            instructions_data: transfer_instruction.clone(),
+            accounts: transfer_instruction
+                .accounts
+                .iter()
+                .map(|acc| AccountInfo {
+                    pubkey: acc.pubkey.to_string(),
+                    is_signer: acc.is_signer,
+                })
+                .collect(),
+            instruction_data: transfer_instruction.clone(),
         },
     };
     HttpResponse::Ok().json(response)
@@ -293,10 +307,28 @@ struct CreateTokenResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+struct AccountMetaData {
+    pubkey: String,
+    is_signer: bool,
+    is_writable: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct CreateTokenData {
     program_id: String,
-    accounts: Vec<AccountMeta>,
-    instructions_data: Instruction,
+    accounts: Vec<AccountMetaData>,
+    #[serde(serialize_with = "serialize_instruction")]
+    instruction_data: Instruction,
+}
+
+fn serialize_instruction<S>(instruction: &Instruction, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeStruct;
+    let mut state = serializer.serialize_struct("Instruction", 1)?;
+    state.serialize_field("data", &base64::encode(&instruction.data))?;
+    state.end()
 }
 
 #[post("/token/create")]
@@ -337,8 +369,16 @@ async fn create_token(body: web::Json<CreateTokenRequest>) -> impl Responder {
         success: true,
         data: CreateTokenData {
             program_id: spl_token::ID.to_string(),
-            accounts: initialize_mint_instruction.accounts.clone(),
-            instructions_data: initialize_mint_instruction.clone(),
+            accounts: initialize_mint_instruction
+                .accounts
+                .iter()
+                .map(|acc| AccountMetaData {
+                    pubkey: acc.pubkey.to_string(),
+                    is_signer: acc.is_signer,
+                    is_writable: acc.is_writable,
+                })
+                .collect(),
+            instruction_data: initialize_mint_instruction.clone(),
         },
     };
     HttpResponse::Ok().json(response)
@@ -361,8 +401,9 @@ struct MintTokenResponse {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct MintTokenData {
     program_id: String,
-    accounts: Vec<AccountMeta>,
-    instructions_data: Instruction,
+    accounts: Vec<AccountMetaData>,
+    #[serde(serialize_with = "serialize_instruction")]
+    instruction_data: Instruction,
 }
 
 #[post("/token/mint")]
@@ -416,8 +457,16 @@ async fn mint_token(body: web::Json<MintTokenRequest>) -> impl Responder {
         success: true,
         data: MintTokenData {
             program_id: spl_token::ID.to_string(),
-            accounts: mint_to_instruction.accounts.clone(),
-            instructions_data: mint_to_instruction.clone(),
+            accounts: mint_to_instruction
+                .accounts
+                .iter()
+                .map(|acc| AccountMetaData {
+                    pubkey: acc.pubkey.to_string(),
+                    is_signer: acc.is_signer,
+                    is_writable: acc.is_writable,
+                })
+                .collect(),
+            instruction_data: mint_to_instruction.clone(),
         },
     };
     HttpResponse::Ok().json(response)
