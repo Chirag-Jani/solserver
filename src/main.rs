@@ -205,7 +205,7 @@ struct SignMessageData {
     message: String,
 }
 
-#[post("/sign/message")]
+#[post("/message/sign")]
 async fn sign_message(body: web::Json<SignMessageRequest>) -> impl Responder {
     if body.message.is_empty() {
         return HttpResponse::BadRequest().json(ErrorResponse::new("Message cannot be empty"));
@@ -246,7 +246,7 @@ struct VerifyMessageData {
     pubkey: String,
 }
 
-#[post("/verify/message")]
+#[post("/message/verify")]
 async fn verify_message(body: web::Json<VerifyMessageRequest>) -> impl Responder {
     let signature = match body.signature.parse::<Signature>() {
         Ok(sig) => sig,
@@ -436,7 +436,7 @@ async fn main() {
             .service(create_token)
             .service(mint_token)
     })
-    .bind("0.0.0.0:8080")
+    .bind("0.0.0.0:8000")
     .unwrap()
     .run()
     .await;
