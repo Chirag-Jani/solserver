@@ -280,6 +280,7 @@ async fn verify_message(body: web::Json<VerifyMessageRequest>) -> impl Responder
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct CreateTokenRequest {
+    #[serde(rename = "mintAuthority")]
     mint_authority: String,
     mint: String,
     decimals: u8,
@@ -343,6 +344,85 @@ async fn create_token(body: web::Json<CreateTokenRequest>) -> impl Responder {
     HttpResponse::Ok().json(response)
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct MintTokenRequest {
+    mint: String,
+    destination: String,
+    authority: String,
+    amount: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct MintTokenResponse {
+    success: bool,
+    data: MintTokenData,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct MintTokenData {
+    program_id: String,
+    accounts: Vec<AccountMeta>,
+    instructions_data: Instruction,
+}
+
+#[post("/token/mint")]
+async fn mint_token(body: web::Json<MintTokenRequest>) -> impl Responder {
+    let mint = match body.mint.parse::<Pubkey>() {
+        Ok(pubkey) => pubkey,
+        Err(e) => {
+            return HttpResponse::BadRequest()
+                .json(ErrorResponse::new(format!("Invalid mint address: {}", e)));
+        }
+    };
+
+    let destination = match body.destination.parse::<Pubkey>() {
+        Ok(pubkey) => pubkey,
+        Err(e) => {
+            return HttpResponse::BadRequest().json(ErrorResponse::new(format!(
+                "Invalid destination address: {}",
+                e
+            )));
+        }
+    };
+
+    let authority = match body.authority.parse::<Pubkey>() {
+        Ok(pubkey) => pubkey,
+        Err(e) => {
+            return HttpResponse::BadRequest().json(ErrorResponse::new(format!(
+                "Invalid authority address: {}",
+                e
+            )));
+        }
+    };
+
+    let mint_to_instruction = match token_instruction::mint_to(
+        &spl_token::ID,
+        &mint,
+        &destination,
+        &authority,
+        &[&authority],
+        body.amount,
+    ) {
+        Ok(instruction) => instruction,
+        Err(e) => {
+            return HttpResponse::BadRequest().json(ErrorResponse::new(format!(
+                "Failed to create mint instruction: {}",
+                e
+            )));
+        }
+    };
+
+    let response = MintTokenResponse {
+        success: true,
+        data: MintTokenData {
+            program_id: spl_token::ID.to_string(),
+            accounts: mint_to_instruction.accounts.clone(),
+            instructions_data: mint_to_instruction.clone(),
+        },
+    };
+    HttpResponse::Ok().json(response)
+}
+
 #[actix_web::main]
 async fn main() {
     dotenv().ok();
@@ -354,6 +434,7 @@ async fn main() {
             .service(sign_message)
             .service(verify_message)
             .service(create_token)
+            .service(mint_token)
     })
     .bind("0.0.0.0:8080")
     .unwrap()
