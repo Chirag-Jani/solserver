@@ -4,7 +4,7 @@ use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
 use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::signature::Keypair;
+use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::{signer::Signer, system_instruction};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -29,8 +29,8 @@ struct SendSolData {
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct SendSolRequest {
-    from: String,
-    to: String,
+    from_address: String,
+    to_address: String,
     lamports: u64,
 }
 
@@ -56,15 +56,15 @@ async fn keypair() -> impl Responder {
 #[post("/send/sol")]
 async fn send_sol(body: web::Json<SendSolRequest>) -> impl Responder {
     let transfer_instruction = system_instruction::transfer(
-        &body.from.parse::<Pubkey>().unwrap(),
-        &body.to.parse::<Pubkey>().unwrap(),
+        &body.from_address.parse::<Pubkey>().unwrap(),
+        &body.to_address.parse::<Pubkey>().unwrap(),
         body.lamports,
     );
 
     let response = SendSolResponse {
         success: true,
         data: SendSolData {
-            program_id: body.from.clone(),
+            program_id: body.from_address.clone(),
             accounts: transfer_instruction.accounts.clone(),
             instructions_data: transfer_instruction.clone(),
         },
@@ -109,6 +109,44 @@ async fn sign_message(body: web::Json<SignMessageRequest>) -> impl Responder {
     HttpResponse::Ok().json(response)
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct VerifyMessageRequest {
+    signature: String,
+    message: String,
+    pubkey: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct VerifyMessageResponse {
+    success: bool,
+    data: VerifyMessageData,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct VerifyMessageData {
+    valid: bool,
+    message: String,
+    pubkey: String,
+}
+
+#[post("/verify/message")]
+async fn verify_message(body: web::Json<VerifyMessageRequest>) -> impl Responder {
+    let signature = body.signature.parse::<Signature>().unwrap();
+    let message = body.message.as_bytes();
+    let pubkey = body.pubkey.parse::<Pubkey>().unwrap();
+    let valid = signature.verify(pubkey.as_ref(), message);
+
+    let response = VerifyMessageResponse {
+        success: true,
+        data: VerifyMessageData {
+            valid,
+            message: body.message.clone(),
+            pubkey: body.pubkey.clone(),
+        },
+    };
+    HttpResponse::Ok().json(response)
+}
+
 #[actix_web::main]
 async fn main() {
     dotenv().ok();
@@ -117,6 +155,7 @@ async fn main() {
             .service(keypair)
             .service(send_sol)
             .service(sign_message)
+            .service(verify_message)
     })
     .bind("0.0.0.0:8080")
     .unwrap()
