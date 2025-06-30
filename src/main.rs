@@ -2,7 +2,7 @@ use actix_web::post;
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
-use solana_sdk::instruction::Instruction;
+use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::Keypair;
 use solana_sdk::{signer::Signer, system_instruction};
@@ -21,15 +21,9 @@ struct KeypairResponse {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct AccountData {
-    pubkey: String,
-    is_signer: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
 struct SendSolData {
     program_id: String,
-    accounts: AccountData,
+    accounts: Vec<AccountMeta>,
     instructions_data: Instruction,
 }
 
@@ -71,10 +65,7 @@ async fn send_sol(body: web::Json<SendSolRequest>) -> impl Responder {
         success: true,
         data: SendSolData {
             program_id: body.from.clone(),
-            accounts: AccountData {
-                pubkey: body.to.clone(),
-                is_signer: false,
-            },
+            accounts: transfer_instruction.accounts.clone(),
             instructions_data: transfer_instruction.clone(),
         },
     };
