@@ -6,6 +6,7 @@ use solana_sdk::instruction::{AccountMeta, Instruction};
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature};
 use solana_sdk::{signer::Signer, system_instruction};
+use spl_token::instruction as token_instruction;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct KeypairData {
@@ -65,6 +66,50 @@ async fn send_sol(body: web::Json<SendSolRequest>) -> impl Responder {
         success: true,
         data: SendSolData {
             program_id: body.from_address.clone(),
+            accounts: transfer_instruction.accounts.clone(),
+            instructions_data: transfer_instruction.clone(),
+        },
+    };
+    HttpResponse::Ok().json(response)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SendTokenRequest {
+    destination: String,
+    mint: String,
+    owner: String,
+    amount: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SendTokenResponse {
+    success: bool,
+    data: SendTokenData,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SendTokenData {
+    program_id: String,
+    accounts: Vec<AccountMeta>,
+    instructions_data: Instruction,
+}
+
+#[post("/send/token")]
+async fn send_token(body: web::Json<SendTokenRequest>) -> impl Responder {
+    let transfer_instruction = token_instruction::transfer(
+        &spl_token::ID,                               // token program ID
+        &body.owner.parse::<Pubkey>().unwrap(),       // source
+        &body.destination.parse::<Pubkey>().unwrap(), // destination
+        &body.mint.parse::<Pubkey>().unwrap(),        // authority
+        &[&body.owner.parse::<Pubkey>().unwrap()],    // signer pubkeys
+        body.amount,                                  // amount
+    )
+    .unwrap();
+
+    let response = SendTokenResponse {
+        success: true,
+        data: SendTokenData {
+            program_id: spl_token::ID.to_string(),
             accounts: transfer_instruction.accounts.clone(),
             instructions_data: transfer_instruction.clone(),
         },
@@ -154,6 +199,7 @@ async fn main() {
         App::new()
             .service(keypair)
             .service(send_sol)
+            .service(send_token)
             .service(sign_message)
             .service(verify_message)
     })
