@@ -81,6 +81,7 @@ struct SendTokenData {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct AccountInfo {
     pubkey: String,
+    #[serde(rename = "isSigner")]
     is_signer: bool,
 }
 
