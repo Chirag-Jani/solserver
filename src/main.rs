@@ -81,12 +81,54 @@ async fn send_sol(body: web::Json<SendSolRequest>) -> impl Responder {
     HttpResponse::Ok().json(response)
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SignMessageRequest {
+    message: String,
+    secret: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SignMessageResponse {
+    success: bool,
+    data: SignMessageData,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct SignMessageData {
+    signature: String,
+    public_key: String,
+    message: String,
+}
+
+#[post("/sign/message")]
+async fn sign_message(body: web::Json<SignMessageRequest>) -> impl Responder {
+    let kp = Keypair::from_base58_string(&body.secret);
+
+    let message = body.message.as_bytes();
+    let signature = kp.sign_message(message);
+
+    let response = SignMessageResponse {
+        success: true,
+        data: SignMessageData {
+            signature: signature.to_string(),
+            public_key: kp.pubkey().to_string(),
+            message: body.message.clone(),
+        },
+    };
+    HttpResponse::Ok().json(response)
+}
+
 #[actix_web::main]
 async fn main() {
     dotenv().ok();
-    let _ = HttpServer::new(|| App::new().service(keypair).service(send_sol))
-        .bind("0.0.0.0:8080")
-        .unwrap()
-        .run()
-        .await;
+    let _ = HttpServer::new(|| {
+        App::new()
+            .service(keypair)
+            .service(send_sol)
+            .service(sign_message)
+    })
+    .bind("0.0.0.0:8080")
+    .unwrap()
+    .run()
+    .await;
 }
